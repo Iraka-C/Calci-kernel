@@ -18,3 +18,5 @@ The simplest way to parse a function and calculate its value is:<br/>
 Expression expr = new Expression(string);
 System.out.println(expr.value().val);
 ```
+
+An Android app using this kernel (Calci_X.X.X.apk) is provided.<br/>
