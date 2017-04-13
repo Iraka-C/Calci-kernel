@@ -10,10 +10,10 @@ The content of each class is as follows:<br/>
 * Function.java: Function names and serials used in Expression.java is registrated in this class
 * ParseNumber.java: Number parser for different radixes
 
-class Complex, Result & ParseNumber must be used together. class Expression & Function may separate.<br/>
+Class Complex, Result & ParseNumber must be used together. Class Expression & Function may separate.<br/>
 
 ***
-The simplest way to parse a function and calculate its value is:<br/>
+The simplest way to parse an expression and calculate its value is:<br/>
 ```java
 Expression expr = new Expression(string);
 System.out.println(expr.value().val);
