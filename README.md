@@ -12,7 +12,7 @@ The content of each class is as follows:<br/>
 
 ***
 The simplest way to parse a function and calculate its value is:<br/>
-`
-  Expression expr = new Expression(string);
-  System.out.println(expr.value().val);
-`
+```java
+Expression expr = new Expression(string);
+System.out.println(expr.value().val);
+```
