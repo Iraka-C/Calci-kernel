@@ -38,7 +38,6 @@ class Function{
 	static final int PERM=280;
 	static final int COMB=290;
 	static final int PREC=300;
-	static final int COLOR=310;
 	static final int BASE=320;
 
 	static class Serial{ // function name - serial struct
@@ -91,7 +90,6 @@ class Function{
 	new Serial("perm",PERM),
 	new Serial("comb",COMB),
 	new Serial("prec",PREC),
-	new Serial("color",COLOR),
 	new Serial("base",BASE),
 	};
 }

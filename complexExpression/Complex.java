@@ -6,8 +6,6 @@ package complexExpression;
  *
  */
 
-import android.util.Log;
-
 import java.lang.Math;
 import java.math.BigDecimal;
 import java.math.MathContext;

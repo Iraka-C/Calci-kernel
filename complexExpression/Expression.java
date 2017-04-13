@@ -1,10 +1,5 @@
 package complexExpression;
 
-import android.graphics.Color;
-import android.util.Log;
-
-import com.iraka.calci.MainActivity;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,7 +23,7 @@ public class Expression {
 	public volatile boolean isWorking;
 	public volatile boolean isExited;
 
-	private static final String mathOperator="+-*/^=√";
+	private static final String mathOperator="+-*/^=�?";
 	private static Complex memValue=new Complex(Double.NaN,Double.NaN); // for memory function
 
 	/*
@@ -168,7 +163,7 @@ public class Expression {
 		if(s.equals("e"))return new Result(Complex.E); // constant e
 		if(s.equals("pi")||s.equals("π"))return new Result(Complex.PI); // constant pi
 		if(s.equals("i"))return new Result(Complex.I); // constant i
-		if(s.equals("∞"))return new Result(Complex.Inf); // constant Infinity
+		if(s.equals("�?"))return new Result(Complex.Inf); // constant Infinity
 		if(s.equals("inf"))return new Result(new Complex(Double.POSITIVE_INFINITY));
 		if(s.equals("nan"))return new Result(new Complex(Double.NaN));
 		if(s.equals("reg"))return new Result(memValue); // reg value
@@ -282,12 +277,12 @@ public class Expression {
 						return new Result(Complex.mul(r1.val,r2.val));
 					}
 
-					boolean iscjPreSymbol=(cj==')'||cj=='∞'||cj=='π'||cj=='°'||cj=='%');
+					boolean iscjPreSymbol=(cj==')'||cj=='�?'||cj=='π'||cj=='°'||cj=='%');
 					boolean iscjNumber=(cj>='0'&&cj<='9'||cj=='.');
 					boolean iscjBase=ParseNumber.isBaseSymbol(cj);
 					boolean case1=(ci>='a'&&ci<='z'||ci=='_'||ci=='(')&&(iscjNumber||iscjPreSymbol||iscjBase);
 					boolean case2=(ci>='0'&&ci<='9'||ci=='.')&&(iscjPreSymbol);
-					boolean case3=(ci=='∞'||ci=='π'||ci=='°'||ci=='%'||ci=='√'||ci=='Γ')&&(iscjNumber||iscjPreSymbol||iscjBase||cj>='a'&&cj<='z'||cj=='_');
+					boolean case3=(ci=='�?'||ci=='π'||ci=='°'||ci=='%'||ci=='�?'||ci=='Γ')&&(iscjNumber||iscjPreSymbol||iscjBase||cj>='a'&&cj<='z'||cj=='_');
 
 					if(case1||case2||case3){
 						isOmitMult[i]=true;
@@ -326,7 +321,7 @@ public class Expression {
 			}
 
 		// Sqrt symbol
-		if(text.charAt(l)=='√'){
+		if(text.charAt(l)=='�?'){
 			Result r1=value(l+1,r,vX);
 			if(r1.isFatalError())return r1;
 			return new Result(Complex.sqrt(r1.val));
@@ -444,32 +439,6 @@ public class Expression {
 				MainActivity.setGlobalPrecision(prec);
 				Result.precision=prec;
 				return new Result(new Complex(0)).append("Setting","Precision is set to "+prec+" digits",l,r);
-			case Function.COLOR:
-				int color=Color.parseColor("#74b1e2");
-				MainActivity.setGlobalColor(color);
-				return new Result(0).setVal(new Complex(0)).append("Interpreter","Reset color",l,r);
-			case Function.COLOR+3:
-				int vR=(int)val[0].re; // R
-				if(vR<0||vR>255)return new Result(-1).append("Setting","Invalid red value provided",l,r);
-				int vG=(int)val[1].re; // G
-				if(vG<0||vG>255)return new Result(-1).append("Setting","Invalid green value provided",l,r);
-				int vB=(int)val[2].re; // B
-				if(vB<0||vB>255)return new Result(-1).append("Setting","Invalid blue value provided",l,r);
-
-				int cMin=Math.min(vR,Math.min(vG,vB));
-				int cMax=Math.max(vR,Math.max(vG,vB));
-				double saturation=(cMax>0?1-(double)cMin/cMax:0);
-				double brightness=cMax/255.0;
-
-				if(saturation<0.3||brightness<0.5){
-					return new Result(-1).setVal(new Complex(-1))
-					.append("ColorPalette","Color assignment failed",l+6,r-1)
-					.append("ColorPalette","This color may cause confusion",l,r);
-				}
-
-				color=Color.argb(255,vR,vG,vB);
-				MainActivity.setGlobalColor(color);
-				return new Result(0).setVal(new Complex(0)).append("Setting","Color is set to (R,G,B)=("+vR+","+vG+","+vB+")",l,r);
 			case Function.BASE:
 				Result.setBase(10);
 				return new Result(new Complex(0))

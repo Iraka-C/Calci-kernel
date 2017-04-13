@@ -1,11 +1,5 @@
 package complexExpression;
 
-import android.os.Bundle;
-import android.os.Message;
-
-import com.iraka.calci.MainActivity;
-import com.iraka.calci.MessageFilter;
-
 import java.util.*;
 
 // Containing a complex result
@@ -30,20 +24,15 @@ public class Result{
 	}
 	public Result(int err_){
 		if(err_<-1){ // special functions
-			MainActivity.serviceHandler.sendEmptyMessage(err_);
+			// do sth for special functions
+			return;
 		}
 		val=new Complex(Double.NaN,Double.NaN);
 		err=err_;
 	}
-	public Result append(String name,String text,int l,int r){ // Well, best to be static, but I don't want to fix it
-		Message msg=new Message();
-		msg.what=2;
-		Bundle bundle=new Bundle();
-		bundle.putString("info",name+":: "+text);
-		bundle.putInt("start",l);
-		bundle.putInt("end",r);
-		msg.setData(bundle);
-		MainActivity.nowMainActivity.msgFilter.outputHandler.sendMessage(msg);
+	public Result append(String name,String text,int l,int r){
+		// Well, best to be static, but I don't want to fix it
+		System.out.println(name+":: "+text);
 		return this;
 	}
 	public Result setVal(Complex v_){

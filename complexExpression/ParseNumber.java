@@ -1,7 +1,5 @@
 package complexExpression;
 
-import android.util.Log;
-
 import java.math.BigDecimal;
 
 /**
@@ -16,7 +14,7 @@ public class ParseNumber{
 	public static boolean isBaseSymbol(char c){
 		return baseSymbol.indexOf(c)>=0;
 	}
-	
+
 	// get a number digit from char under certain base
 	private static int getDigit(char c,int base) throws NumberFormatException{
 		int digit;
