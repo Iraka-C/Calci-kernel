@@ -5,9 +5,9 @@ package complexExpression;
  */
 
 class Function{
-	
+
 	// place a function serial here, interval 10 (accept maximum 10 params.)
-	
+
 	static final int EXP=10;
 	static final int LN=20;
 	static final int RE=30;
@@ -40,8 +40,7 @@ class Function{
 	static final int PREC=300;
 	static final int COLOR=310;
 	static final int BASE=320;
-	static final int IA_ONE=1010;
-	
+
 	static class Serial{ // function name - serial struct
 		String funcName;
 		int funcSerial;
@@ -57,7 +56,7 @@ class Function{
 			exprParamNum=ePN_;
 		}
 	}
-	
+
 	// Register name and serial pair
 	// Different name may direct to same function
 	static final Serial[] funcList={
@@ -94,6 +93,5 @@ class Function{
 	new Serial("prec",PREC),
 	new Serial("color",COLOR),
 	new Serial("base",BASE),
-	new Serial("ia&one",IA_ONE)
 	};
 }

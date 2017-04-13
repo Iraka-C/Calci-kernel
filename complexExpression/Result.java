@@ -23,7 +23,7 @@ public class Result{
 	 * -1: Mathematical Error
 	 * <=-2: Special Functions
 	 */
-	
+
 	public Result(Complex v){
 		val=v;
 		err=0;
@@ -50,13 +50,13 @@ public class Result{
 		val=v_;
 		return this;
 	}
-	
+
 	public static void setBase(int base_){
 		base=base_;
 		precision=(int)Math.floor(35*Math.log(2)/Math.log(base_));
 		maxPrecision=(int)Math.floor(52*Math.log(2)/Math.log(base_));
 	}
-	
+
 	boolean isFatalError(){
 		return err>0;
 	}

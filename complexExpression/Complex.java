@@ -58,7 +58,7 @@ public class Complex {
 
 	public Complex norm(){
 		/* Old implementation. There's already a hypot function
-		
+
 		// needs repairing: what if 1E200+1E200i ?
 		// use z -> arg(z) -> cos(theta) -> norm instead.
 		if(Double.isInfinite(re)||Double.isInfinite(im))
@@ -94,11 +94,11 @@ public class Complex {
 	public boolean isValid(){ // finite complex or Complex Infinity
 		return !(isDoubleFinite(re)&&Double.isNaN(im));
 	}
-	
+
 	public static boolean isDoubleFinite(double d){
 		return !(Double.isNaN(d)||Double.isInfinite(d));
 	}
-	
+
 	public boolean isFinite(){
 		return Complex.isDoubleFinite(re)&&Complex.isDoubleFinite(im);
 	}
@@ -113,20 +113,20 @@ public class Complex {
 		double im=(a.im*b.re-a.re*b.im)/bNorm;
 		return new Complex(re,im);
 	}
-	
+
 	private static String significand(double oldDouble,int scale_) {
 		// Original implementation of number output
-		
+
 		int scale=scale_>=0?scale_:0;
 		String s=new BigDecimal(Double.toString(oldDouble),new MathContext(scale,RoundingMode.HALF_EVEN)).toString();
 		StringBuffer sBuffer=new StringBuffer(s);
 		int pos=s.indexOf('E');
 		if(pos==-1)pos=s.length(); // no E found
 		pos--;
-		
+
 		int pdot=s.indexOf('.');
 		if(pdot==-1)pdot=s.length(); // no . found
-		
+
 		// delete redundant 0 after the dot
 		while(pos>pdot&&s.charAt(pos)=='0'&&s.charAt(pos-1)>='0'&&s.charAt(pos-1)<='9'){ // you may use s, but s isn't changed
 			sBuffer.deleteCharAt(pos);
@@ -134,7 +134,7 @@ public class Complex {
 		}
 		return sBuffer.toString();
 	}
-	
+
 	private static String doubleToString(double d){
 		if(Double.isNaN(d)){
 			return "nan";
@@ -142,7 +142,7 @@ public class Complex {
 		if(Double.isInfinite(d)){
 			return d>0?"inf":"-inf";
 		}
-		
+
 		/*if(Result.precision<15){
 			//return Complex.significand(d,Result.precision);
 			return ParseNumber.toBaseString(d,2,Result.precision);
@@ -153,10 +153,10 @@ public class Complex {
 		if(Result.base==10&&Result.precision==Result.maxPrecision){
 			return Double.toString(d);
 		}
-		
+
 		return ParseNumber.toBaseString(d,Result.base,Result.precision);
 	}
-	
+
 	public String toString(){ // kind of slow !!!
 		String s="";
 		double threshold=(Result.precision<Result.maxPrecision?Math.pow(Result.base,-Result.precision):0);
@@ -165,7 +165,7 @@ public class Complex {
 		}
 		else if(Math.abs(re)>threshold||Double.isNaN(re)){ // re to be shown.
 			s+=doubleToString(re);
-			
+
 			if(isDoubleFinite(im)){
 				if(Math.abs(im)>threshold){
 					s+=(im>0?"+":"-");
@@ -197,7 +197,7 @@ public class Complex {
 				s+=doubleToString(im)+"*i";
 			}
 		}
-		
+
 		return s;
 	}
 
@@ -240,16 +240,16 @@ public class Complex {
 		//return Complex.div(Complex.sin(c),Complex.cos(c)); // not precise enough
 		double re2=c.re*2;
 		double im2=c.im*2;
-		
+
 		double eip2=Math.exp(im2);
 		double ein2=Math.exp(-im2);
 		double sinhi2=(eip2-ein2)/2;
 		double coshi2=(eip2+ein2)/2;
-		
+
 		if(Double.isInfinite(coshi2)){ // Special case
 			return new Complex(0,c.im>0?1:-1);
 		}
-		
+
 		double ratio=Math.cos(re2)+coshi2;
 		double resRe=Math.sin(re2)/ratio;
 		double resIm=sinhi2/ratio;
@@ -272,7 +272,7 @@ public class Complex {
 		/*Complex v1=Complex.ln(Complex.sub(new Complex(1),Complex.mul(c,I)));
 		Complex v2=Complex.ln(Complex.add(new Complex(1),Complex.mul(c,I)));
 		return Complex.mul(new Complex(0,0.5),Complex.sub(v1,v2));*/ // Old implementation
-		
+
 		Complex c1=new Complex(1-c.im,c.re);
 		Complex c2=new Complex(1+c.im,-c.re);
 		double re_=(c1.arg().re-c2.arg().re)/2;
@@ -286,13 +286,13 @@ public class Complex {
 		9.9843695780195716E-6,1.5056327351493116E-7
 	};
 	public static Complex gamma(Complex c){ // Lanczos approximation
-		
+
 		if(c.re>=142.2152&&Math.abs(c.im)<=0.001){ // secure to produce complex inf
 			return Complex.Inf;
 		}
-		
+
 		Complex result;
-		
+
 		if(c.re<-310){ // bounded
 			if(c.re==Math.floor(c.re))
 				return Complex.Inf;
@@ -330,6 +330,6 @@ public class Complex {
 		}
 		return result;
 	}
-	
-	
+
+
 }
