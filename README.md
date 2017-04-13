@@ -11,8 +11,8 @@ The content of each class is as follows:<br/>
 * ParseNumber.java: Number parser for different radix
 
 ***
-The simplest way to parse a function and calculate its value is:
+The simplest way to parse a function and calculate its value is:<br/>
 `
-Expression expr = new Expression(string);
-System.out.println(expr.value().val);
+  Expression expr = new Expression(string);
+  System.out.println(expr.value().val);
 `
