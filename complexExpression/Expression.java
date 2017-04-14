@@ -23,7 +23,7 @@ public class Expression {
 	public volatile boolean isWorking;
 	public volatile boolean isExited;
 
-	private static final String mathOperator="+-*/^=�?";
+	private static final String mathOperator="+-*/^=√";
 	private static Complex memValue=new Complex(Double.NaN,Double.NaN); // for memory function
 
 	/*
@@ -163,7 +163,7 @@ public class Expression {
 		if(s.equals("e"))return new Result(Complex.E); // constant e
 		if(s.equals("pi")||s.equals("π"))return new Result(Complex.PI); // constant pi
 		if(s.equals("i"))return new Result(Complex.I); // constant i
-		if(s.equals("�?"))return new Result(Complex.Inf); // constant Infinity
+		if(s.equals("∞"))return new Result(Complex.Inf); // constant Infinity
 		if(s.equals("inf"))return new Result(new Complex(Double.POSITIVE_INFINITY));
 		if(s.equals("nan"))return new Result(new Complex(Double.NaN));
 		if(s.equals("reg"))return new Result(memValue); // reg value
@@ -277,12 +277,12 @@ public class Expression {
 						return new Result(Complex.mul(r1.val,r2.val));
 					}
 
-					boolean iscjPreSymbol=(cj==')'||cj=='�?'||cj=='π'||cj=='°'||cj=='%');
+					boolean iscjPreSymbol=(cj==')'||cj=='∞'||cj=='π'||cj=='°'||cj=='%');
 					boolean iscjNumber=(cj>='0'&&cj<='9'||cj=='.');
 					boolean iscjBase=ParseNumber.isBaseSymbol(cj);
 					boolean case1=(ci>='a'&&ci<='z'||ci=='_'||ci=='(')&&(iscjNumber||iscjPreSymbol||iscjBase);
 					boolean case2=(ci>='0'&&ci<='9'||ci=='.')&&(iscjPreSymbol);
-					boolean case3=(ci=='�?'||ci=='π'||ci=='°'||ci=='%'||ci=='�?'||ci=='Γ')&&(iscjNumber||iscjPreSymbol||iscjBase||cj>='a'&&cj<='z'||cj=='_');
+					boolean case3=(ci=='∞'||ci=='π'||ci=='°'||ci=='%'||ci=='√'||ci=='Γ')&&(iscjNumber||iscjPreSymbol||iscjBase||cj>='a'&&cj<='z'||cj=='_');
 
 					if(case1||case2||case3){
 						isOmitMult[i]=true;
@@ -321,7 +321,7 @@ public class Expression {
 			}
 
 		// Sqrt symbol
-		if(text.charAt(l)=='�?'){
+		if(text.charAt(l)=='√'){
 			Result r1=value(l+1,r,vX);
 			if(r1.isFatalError())return r1;
 			return new Result(Complex.sqrt(r1.val));
@@ -426,7 +426,6 @@ public class Expression {
 			case Function.PERM+2:return new Result(perm(val[0],val[1]));
 			case Function.COMB+2:return new Result(comb(val[0],val[1]));
 			case Function.PREC:
-				MainActivity.setGlobalPrecision(10);
 				Result.setBase(Result.base);
 				return new Result(new Complex(0)).append("Setting","Precision is set to "+Result.precision+" digits",l,r);
 			case Function.PREC+1:
@@ -436,7 +435,6 @@ public class Expression {
 					return new Result(-1).setVal(new Complex(-1))
 					.append("Setting","Precision too high",l,r)
 					.append("Setting","The maximum precision is "+Result.maxPrecision+" digits",l,r);
-				MainActivity.setGlobalPrecision(prec);
 				Result.precision=prec;
 				return new Result(new Complex(0)).append("Setting","Precision is set to "+prec+" digits",l,r);
 			case Function.BASE:

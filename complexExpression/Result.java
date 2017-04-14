@@ -40,7 +40,7 @@ public class Result{
 		return this;
 	}
 
-	public static void setBase(int base_){
+	public static void setBase(int base_){ // set the radix as base_
 		base=base_;
 		precision=(int)Math.floor(35*Math.log(2)/Math.log(base_));
 		maxPrecision=(int)Math.floor(52*Math.log(2)/Math.log(base_));
