@@ -1,5 +1,3 @@
-package complexExpression;
-
 import java.math.BigDecimal;
 
 /**
@@ -31,22 +29,9 @@ public class ParseNumber{
 		return digit;
 	}
 
-	// parse a float number presentation under certain base
-	public static double parse(String s) throws NumberFormatException{
-
-		int base=0;
-		int baseSymbolPos=-1;
-		for(int i=0;i<s.length();i++){
-			base=baseSymbol.indexOf(s.charAt(i));
-			if(base>0){ // base 0 if invalid
-				baseSymbolPos=i;
-				break;
-			}
-		}
-		if(baseSymbolPos==-1)throw new NumberFormatException();
-
+	private static double parseRaw(String s,int base)throws NumberFormatException{
 		int dotPos;
-		for(dotPos=0;dotPos<baseSymbolPos;dotPos++){
+		for(dotPos=0;dotPos<s.length();dotPos++){
 			if(s.charAt(dotPos)=='.')
 				break;
 		}
@@ -58,10 +43,29 @@ public class ParseNumber{
 			digitBase*=base;
 		}
 		digitBase=1./base;
-		for(int i=dotPos+1;i<baseSymbolPos;i++){
+		for(int i=dotPos+1;i<s.length();i++){
 			frac+=getDigit(s.charAt(i),base)*digitBase;
 			digitBase/=base;
 		}
+
+		return frac;
+	}
+
+	// parse a float number presentation under certain base
+	public static double parse(String s)throws NumberFormatException{
+
+		int base=0;
+		int baseSymbolPos=-1;
+		for(int i=0;i<s.length();i++){
+			base=baseSymbol.indexOf(s.charAt(i));
+			if(base>0){ // base 0 if invalid
+				baseSymbolPos=i;
+				break;
+			}
+		}
+		if(baseSymbolPos==0)throw new NumberFormatException();
+		if(baseSymbolPos<0)return parseCompat(s); // parse the string as a compat format
+
 
 		int exp;
 		if(baseSymbolPos==s.length()-1){
@@ -70,8 +74,21 @@ public class ParseNumber{
 		else{
 			exp=Integer.parseInt(s.substring(baseSymbolPos+1));
 		}
+		double frac=parseRaw(s.substring(0,baseSymbolPos),base);
 
 		return frac*Math.pow(base,exp);
+	}
+
+	public static double parseCompat(String s)throws NumberFormatException{
+		int baseDivSymbolPos=s.indexOf('~');
+		if(baseDivSymbolPos<=0||baseDivSymbolPos>=s.length()-1)
+			throw new NumberFormatException();
+
+		int base=Integer.parseInt(s.substring(baseDivSymbolPos+1));
+		if(!(base>=2&&base<=10||base==12||base==16)) // base not supported
+			throw new NumberFormatException();
+
+		return parseRaw(s.substring(0,baseDivSymbolPos),base);
 	}
 
 	// without scientific display mode
@@ -94,11 +111,6 @@ public class ParseNumber{
 			digits[i]=(int)Math.floor(fracPart);
 			fracPart-=digits[i];
 		}
-
-		/*Log.i("parser","parsing "+d);
-		for(int i=0;i<=prec+1;i++)
-			Log.i("parser","digits["+i+"]="+digits[i]);
-		Log.i("parser","digitnum="+intDigitNum);*/
 
 		if(digits[prec+1]*2>=base){ // carry-over
 			digits[prec]++;
@@ -144,8 +156,13 @@ public class ParseNumber{
 		double maxPreciseValue=Math.pow(base,prec);
 		double minPreciseValue=Math.pow(base,-prec);
 
+		String result;
+
 		if(d<maxPreciseValue&&d>minPreciseValue){ // able to express under fixed precision
-			return negativeSymbol+toPositiveRawBaseString(d,base,prec)+(base==10?"":baseSymbol.charAt(base));
+			result=negativeSymbol+toPositiveRawBaseString(d,base,prec);
+			if(base!=10){
+				result+=baseSymbol.charAt(base);
+			}
 		}
 		else{ // need scientific notation
 			double fracPart=d;
@@ -158,12 +175,19 @@ public class ParseNumber{
 				digitExp--;
 				fracPart*=base;
 			}
-			/*int digitExp=(int)Math.floor(Math.log(d)/Math.log(base));
-			double fracPart=d/Math.pow(base,digitExp);*/
-			String res=toPositiveRawBaseString(fracPart,base,prec)+(base==10?"E":baseSymbol.charAt(base));
-			res+=(digitExp>=0?"+":"")+digitExp;
-			return negativeSymbol+res;
+
+			if(base==10){
+				result=negativeSymbol+toPositiveRawBaseString(fracPart,base,prec);
+				result+="E";
+			}
+			else{
+				result=negativeSymbol+toPositiveRawBaseString(fracPart,base,prec);
+				result+=baseSymbol.charAt(base);
+			}
+
+			result+=digitExp;
 		}
+		return result;
 	}
 
 	public static final String[] baseName=new String[]{

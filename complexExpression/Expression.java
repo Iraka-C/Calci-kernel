@@ -1,5 +1,3 @@
-package complexExpression;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,21 +8,67 @@ public class Expression {
 	public int[] nextFS; // next functional symbol of the same level
 	public int[] commaCnt; // for each '(', how many comma belongs to it?
 	public int[] funcSer; // the function interpreted
-	private int brDiff; // the difference of ( and )
+	public int brDiff; // the difference of ( and )
 
-	// Cache number parsing result, reduce time consumption
-	private int[] numberParseRPos; // Where does a number starts at a position end? -1 for not a number start.
-	private double[] numberParseResult; // The value of a number starts at a position
+	// Cache interpretation result
+	private class SymbolCachePair{
+		static final int SYMBOL_NUM=0; // may cache value
+		static final int SYMBOL_ADD=1;
+		static final int SYMBOL_POS=2;
+		static final int SYMBOL_SUB=3;
+		static final int SYMBOL_NEG=4;
+		static final int SYMBOL_MUL=5;
+		static final int SYMBOL_DIV=6;
+		static final int SYMBOL_MUL_OMIT=7;
+		static final int SYMBOL_POW=8;
+		static final int SYMBOL_SQRT=9;
+		static final int SYMBOL_CONST=10; // may cache value
+		static final int SYMBOL_FUNC=11;
+		static final int SYMBOL_VAR=12; // Temporarily not used
+		static final int SYMBOL_BRACKET=13;
 
-	// Cache symbol parsing result
-	private int[] isAddSubParseResult; // is this an add/sub symbol ?
-	private boolean[] isOmitMult; // is '*' omitted here ?
+		int end_pos;
+		int symbol;
+		int symbol_pos;
+		Complex cachedValue;
+		SymbolCachePair(int end_pos_,int symbol_,int symbol_pos_,Complex cachedValue_){
+			end_pos=end_pos_;
+			symbol=symbol_;
+			symbol_pos=symbol_pos_;
+			cachedValue=cachedValue_;
+		}
+	}
+	private class SymbolCache{
+		List<SymbolCachePair> list;
+		SymbolCache(){
+			list=new ArrayList<>();
+		}
+		void submit(int end_pos_,int symbol_,int symbol_pos_){
+			list.add(new SymbolCachePair(end_pos_,symbol_,symbol_pos_,new Complex()));
+			//Log.i("expression","Submit pos="+symbol_pos_+" type="+symbol_);
+		}
+		void submit(int end_pos_,int symbol_,Complex cachedValue_){
+			list.add(new SymbolCachePair(end_pos_,symbol_,-1,cachedValue_));
+			//Log.i("expression","Submit val="+cachedValue_+" type="+symbol_);
+		}
+		SymbolCachePair checkCache(int end_pos){
+			for(int i=0;i<list.size();i++){
+				SymbolCachePair pair=list.get(i);
+				if(pair.end_pos==end_pos){
+					return pair;
+				}
+			}
+			return null;
+		}
+	}
+	private SymbolCache[] interpretResult;
 
 	public volatile boolean isWorking;
 	public volatile boolean isExited;
 
 	private static final String mathOperator="+-*/^=√";
-	private static Complex memValue=new Complex(Double.NaN,Double.NaN); // for memory function
+	private static Complex memValue=new Complex(); // for memory function
+	private static Complex ansValue=new Complex(); // for last answer
 
 	/*
 	In this instance, the following data structure is used:
@@ -38,13 +82,12 @@ public class Expression {
 	ccnt: 2    1
 	*/
 
-	public Expression(String s){
+	public Expression(String s){ // primitive analysis to the expression
 		text=s;
 		br=new int[s.length()+1];
 		lastLB=new int[s.length()+1];
 		nextFS=new int[s.length()+1];
 		commaCnt=new int[s.length()+1];
-		funcSer=new int[s.length()+1];
 		brDiff=0;
 
 		int[] symbolStack=new int[s.length()+1]; // a position stack of all left brackets
@@ -57,7 +100,6 @@ public class Expression {
 			lastLB[i]=-1;
 			nextFS[i]=-1;
 			commaCnt[i]=0;
-			funcSer[i]=-1;
 			char c=s.charAt(i);
 			if(i>0){
 				br[i]=br[i-1];
@@ -78,23 +120,23 @@ public class Expression {
 				nextFS[lastSymbol[top]]=i;
 				lastSymbol[top]=i;
 			}
-			if(c==')'&&top>=0){ // pop
-				lastLB[i]=symbolStack[top];
-				nextFS[lastSymbol[top]]=i;
-				top--;
+			if(c==')'){
+				if(top>=0){ // pop
+					lastLB[i]=symbolStack[top];
+					nextFS[lastSymbol[top]]=i;
+					top--;
+				}
 				brDiff--;
 			}
 		}
+	}
 
-		numberParseRPos=new int[s.length()];
-		numberParseResult=new double[s.length()];
-		isAddSubParseResult=new int[s.length()];
-		isOmitMult=new boolean[s.length()];
-
-		for(int i=0;i<s.length();i++){
-			numberParseRPos[i]=-1;
-			isAddSubParseResult[i]=-1;
-			isOmitMult[i]=false;
+	private void initCache(){ // init cache for evaluation
+		funcSer=new int[text.length()];
+		interpretResult=new SymbolCache[text.length()];
+		for(int i=0;i<interpretResult.length;i++){
+			interpretResult[i]=new SymbolCache();
+			funcSer[i]=-1;
 		}
 	}
 
@@ -104,18 +146,15 @@ public class Expression {
 
 	// only used when text[p]=='+'/'-' && p>0
 	private boolean isAddSubSymbol(int p){
-		if(isAddSubParseResult[p]>-1)
-			return isAddSubParseResult[p]>0;
+		if(p==0)return false;
 
 		char cj=text.charAt(p);
 		if(!(cj=='+'||cj=='-')){
-			isAddSubParseResult[p]=0;
 			return false;
 		}
 
 		cj=text.charAt(p-1);
 		if(isOperator(cj)||cj=='E'){
-			isAddSubParseResult[p]=0;
 			return false;
 		}
 		if(ParseNumber.isBaseSymbol(cj)){ // a pos/neg symbol in scientific notation under certain base
@@ -127,30 +166,46 @@ public class Expression {
 				}
 			}
 			if(pos==text.length()){ // parsed to an end
-				isAddSubParseResult[p]=0;
 				return false;
 			}
 			if(pos==p+1){ // '+/-' directly followed by non-integer symbol
-				isAddSubParseResult[p]=1;
 				return true;
 			}
 			if(ParseNumber.isBaseSymbol(cj)||(cj>='A'&&cj<='F')||cj=='.'){ // part of another notation
-				isAddSubParseResult[p]=1;
 				return true;
 			}
-			isAddSubParseResult[p]=0;
 			return false;
 		}
-		isAddSubParseResult[p]=1;
 		return true;
+	}
+
+	// only used when text[p]=='*' && p>0
+	private boolean isOmitMult(int p){
+		if(p==0)return false;
+
+		char ci=text.charAt(p);
+		char cj=text.charAt(p-1);
+
+		boolean iscjPreSymbol=(cj==')'||cj=='∞'||cj=='π'||cj=='°'||cj=='%');
+		boolean iscjNumber=(cj>='0'&&cj<='9'||cj>='A'&&cj<='Z'||cj=='.');
+		boolean iscjBase=ParseNumber.isBaseSymbol(cj);
+		boolean iscjFunc=(cj>='a'&&cj<='z'||cj=='_');
+		boolean isciNumber=(ci>='0'&&ci<='9'||ci>='A'&&ci<='Z'||ci=='.');
+		//boolean isciBase=ParseNumber.isBaseSymbol(ci);
+
+		boolean case1=(ci>='a'&&ci<='z'||ci=='_'||ci=='(')&&(iscjNumber||iscjPreSymbol||iscjBase);
+		boolean case2=(isciNumber)&&(iscjPreSymbol||iscjFunc);
+		boolean case3=(ci=='∞'||ci=='π'||ci=='°'||ci=='%'||ci=='√'||ci=='Γ')&&(iscjNumber||iscjPreSymbol||iscjBase||iscjFunc);
+
+		return case1||case2||case3;
 	}
 
 	// 0+NaN*I is never possible during a calculation
 	// and is so used as "No Variable X provided" sign
-	public Result value(int l,int r,Complex vX){
+	private Result value(int l,int r,Complex vX){
 		if(!isWorking)return new Result(3); // Calculation Thread Halted
 
-		if(l>r){
+		if(l>r){ // item expected
 			return new Result(2).append(
 			"Interpreter",
 			"Expression expected",
@@ -158,32 +213,89 @@ public class Expression {
 			);
 		}
 
+		// Check if result cached
+		SymbolCachePair pair=interpretResult[l].checkCache(r);
+		if(pair!=null){ // cached result
+			Result r1,r2;
+			switch(pair.symbol){ // No fatal error now
+				case SymbolCachePair.SYMBOL_CONST:
+				case SymbolCachePair.SYMBOL_NUM:
+					return new Result(pair.cachedValue);
+				case SymbolCachePair.SYMBOL_ADD:
+					r1=value(l,pair.symbol_pos-1,vX);
+					r2=value(pair.symbol_pos+1,r,vX);
+					return new Result(Complex.add(r1.val,r2.val));
+				case SymbolCachePair.SYMBOL_SUB:
+					r1=value(l,pair.symbol_pos-1,vX);
+					r2=value(pair.symbol_pos+1,r,vX);
+					return new Result(Complex.sub(r1.val,r2.val));
+				case SymbolCachePair.SYMBOL_POS:
+					return value(l+1,r,vX);
+				case SymbolCachePair.SYMBOL_NEG:
+					r1=value(l+1,r,vX);
+					return new Result(Complex.inv(r1.val));
+				case SymbolCachePair.SYMBOL_MUL:
+					r1=value(l,pair.symbol_pos-1,vX);
+					r2=value(pair.symbol_pos+1,r,vX);
+					return new Result(Complex.mul(r1.val,r2.val));
+				case SymbolCachePair.SYMBOL_DIV:
+					r1=value(l,pair.symbol_pos-1,vX);
+					r2=value(pair.symbol_pos+1,r,vX);
+					return new Result(Complex.div(r1.val,r2.val));
+				case SymbolCachePair.SYMBOL_MUL_OMIT:
+					r1=value(l,pair.symbol_pos-1,vX);
+					r2=value(pair.symbol_pos,r,vX); // Attention to the pos!
+					return new Result(Complex.mul(r1.val,r2.val));
+				case SymbolCachePair.SYMBOL_POW:
+					r1=value(l,pair.symbol_pos-1,vX);
+					r2=value(pair.symbol_pos+1,r,vX);
+					return new Result(Complex.pow(r1.val,r2.val));
+				case SymbolCachePair.SYMBOL_SQRT:
+					r1=value(l+1,r,vX);
+					return new Result(Complex.sqrt(r1.val));
+				case SymbolCachePair.SYMBOL_FUNC:
+					return funcValue(l,r,vX);
+				case SymbolCachePair.SYMBOL_BRACKET:
+					return value(l+1,r-1,vX);
+			}
+		}
+
+		// Interpret expression
 		String s=text.substring(l,r+1);
-		// Constants
-		if(s.equals("e"))return new Result(Complex.E); // constant e
-		if(s.equals("pi")||s.equals("π"))return new Result(Complex.PI); // constant pi
-		if(s.equals("i"))return new Result(Complex.I); // constant i
-		if(s.equals("∞"))return new Result(Complex.Inf); // constant Infinity
-		if(s.equals("inf"))return new Result(new Complex(Double.POSITIVE_INFINITY));
-		if(s.equals("nan"))return new Result(new Complex(Double.NaN));
+
+		// Variable
+		if(s.equals("x")&&(vX.isValid()||vX.isNaN()))return new Result(vX); // variable X
 		if(s.equals("reg"))return new Result(memValue); // reg value
-		if(s.equals("°"))return new Result(new Complex(Math.PI/180)); // degree value
-		if(s.equals("%"))return new Result(new Complex(0.01)); // percent value
-		if(s.equals("x")){
-			if(vX.isValid()||vX.isNaN())
-				return new Result(vX); // variable X
+
+		// omit space and enter
+		if(text.charAt(l)==' '||text.charAt(l)=='\n'||text.charAt(l)=='\r')return value(l+1,r,vX);
+		if(text.charAt(r)==' '||text.charAt(r)=='\n'||text.charAt(r)=='\r')return value(l,r-1,vX);
+
+		//======================= Below this line, string will be parsed only once ========================
+
+		{ // Constants
+			Complex complexConst=null;
+			if(s.equals("e")) complexConst=Complex.E; // constant e
+			if(s.equals("pi")||s.equals("π")) complexConst=Complex.PI; // constant pi
+			if(s.equals("i")) complexConst=Complex.I; // constant i
+			if(s.equals("∞")) complexConst=Complex.Inf; // constant Infinity
+			if(s.equals("inf")) complexConst=new Complex(Double.POSITIVE_INFINITY);
+			if(s.equals("nan")) complexConst=new Complex();
+			if(s.equals("°")) complexConst=new Complex(Math.PI/180); // degree value
+			if(s.equals("%")) complexConst=new Complex(0.01); // percent value
+			if(s.equals("ans")) complexConst=ansValue; // ans is stable during 1 calculation
+			if(complexConst!=null){
+				interpretResult[l].submit(r,SymbolCachePair.SYMBOL_CONST,complexConst);
+				return new Result(complexConst);
+			}
 		}
 
-		// try to parse s as a number
-		if(numberParseRPos[l]==r){ // already parsed and cached
-			return new Result(new Complex(numberParseResult[l]));
-		}
-		else try{
+		// Number parsing
+		try{
 			// Forbid default real values and char e as a operator
-			/*if(s.equals("Infinity")||s.equals("+Infinity")||s.equals("-Infinity")||
-			s.equals("NaN")||s.equals("+NaN")||s.equals("-NaN")||s.indexOf('e')>=0){*/
-
-			if(s.indexOf('e')>=0){
+			// Forbid default notations
+			if(s.indexOf('e')>=0||s.indexOf('I')>=0||s.indexOf('N')>=0||
+				s.indexOf('X')>=0||s.indexOf('P')>=0||s.indexOf('x')>=0||s.indexOf('p')>=0){
 				throw new NumberFormatException();
 			}
 
@@ -193,37 +305,26 @@ public class Expression {
 				}
 
 				double v=Double.parseDouble(s);
-				numberParseRPos[l]=r;
-				numberParseResult[l]=v;
+				interpretResult[l].submit(r,SymbolCachePair.SYMBOL_NUM,new Complex(v));
 				return new Result(new Complex(v));
 			}catch(NumberFormatException e){ // try parse double under a base
 				// Not a valid dec Double
 				double v=ParseNumber.parse(s);
-				numberParseRPos[l]=r;
-				numberParseResult[l]=v;
+				interpretResult[l].submit(r,SymbolCachePair.SYMBOL_NUM,new Complex(v));
 				return new Result(new Complex(v));
 			}
 		}catch(NumberFormatException e){
 			// Not a valid Number
 		}
 
-		// omit space and enter
-		if(text.charAt(l)==' '||text.charAt(l)=='\n'||text.charAt(l)=='\r'){
-			return value(l+1,r,vX);
-		}
-		if(text.charAt(r)==' '||text.charAt(r)=='\n'||text.charAt(r)=='\r'){
-			return value(l,r-1,vX);
-		}
-
 		char ci;
-		char cj;
-
 		// Addition and Subtraction
 		for(int i=r;i>l;i--){
 			ci=text.charAt(i);
 			// Only ONE of the following long boolean expression will be calculated
 			if(br[i]==br[l]&&isAddSubSymbol(i)){
 				if(ci=='+'){
+					interpretResult[l].submit(r,SymbolCachePair.SYMBOL_ADD,i);
 					Result r1=value(l,i-1,vX);
 					if(r1.isFatalError())return r1;
 					Result r2=value(i+1,r,vX);
@@ -231,6 +332,7 @@ public class Expression {
 					return new Result(Complex.add(r1.val,r2.val));
 				}
 				else if(ci=='-'){
+					interpretResult[l].submit(r,SymbolCachePair.SYMBOL_SUB,i);
 					Result r1=value(l,i-1,vX);
 					if(r1.isFatalError())return r1;
 					Result r2=value(i+1,r,vX);
@@ -241,9 +343,12 @@ public class Expression {
 		}
 
 		// Unary operator: positive and negative
-		if(text.charAt(l)=='+')
+		if(text.charAt(l)=='+'){
+			interpretResult[l].submit(r,SymbolCachePair.SYMBOL_POS,-1);
 			return value(l+1,r,vX);
+		}
 		else if(text.charAt(l)=='-'){
+			interpretResult[l].submit(r,SymbolCachePair.SYMBOL_NEG,-1);
 			Result r1=value(l+1,r,vX);
 			if(r1.isFatalError())return r1;
 			return new Result(Complex.inv(r1.val));
@@ -253,8 +358,8 @@ public class Expression {
 		for(int i=r;i>l;i--){
 			if(br[i]==br[l]){
 				ci=text.charAt(i);
-				cj=text.charAt(i-1);
 				if(ci=='*'||ci=='×'){
+					interpretResult[l].submit(r,SymbolCachePair.SYMBOL_MUL,i);
 					Result r1=value(l,i-1,vX);
 					if(r1.isFatalError())return r1;
 					Result r2=value(i+1,r,vX);
@@ -262,36 +367,20 @@ public class Expression {
 					return new Result(Complex.mul(r1.val,r2.val));
 				}
 				else if(ci=='/'||ci=='÷'){
+					interpretResult[l].submit(r,SymbolCachePair.SYMBOL_DIV,i);
 					Result r1=value(l,i-1,vX);
 					if(r1.isFatalError())return r1;
 					Result r2=value(i+1,r,vX);
 					if(r2.isFatalError())return r2;
 					return new Result(Complex.div(r1.val,r2.val));
 				}
-				else{ // * symbol omission
-					if(isOmitMult[i]){ // cached
-						Result r1=value(l,i-1,vX);
-						if(r1.isFatalError()) return r1;
-						Result r2=value(i,r,vX);
-						if(r2.isFatalError()) return r2;
-						return new Result(Complex.mul(r1.val,r2.val));
-					}
-
-					boolean iscjPreSymbol=(cj==')'||cj=='∞'||cj=='π'||cj=='°'||cj=='%');
-					boolean iscjNumber=(cj>='0'&&cj<='9'||cj=='.');
-					boolean iscjBase=ParseNumber.isBaseSymbol(cj);
-					boolean case1=(ci>='a'&&ci<='z'||ci=='_'||ci=='(')&&(iscjNumber||iscjPreSymbol||iscjBase);
-					boolean case2=(ci>='0'&&ci<='9'||ci=='.')&&(iscjPreSymbol);
-					boolean case3=(ci=='∞'||ci=='π'||ci=='°'||ci=='%'||ci=='√'||ci=='Γ')&&(iscjNumber||iscjPreSymbol||iscjBase||cj>='a'&&cj<='z'||cj=='_');
-
-					if(case1||case2||case3){
-						isOmitMult[i]=true;
-						Result r1=value(l,i-1,vX);
-						if(r1.isFatalError()) return r1;
-						Result r2=value(i,r,vX);
-						if(r2.isFatalError()) return r2;
-						return new Result(Complex.mul(r1.val,r2.val));
-					}
+				else if(isOmitMult(i)){ // * symbol omission
+					interpretResult[l].submit(r,SymbolCachePair.SYMBOL_MUL_OMIT,i);
+					Result r1=value(l,i-1,vX);
+					if(r1.isFatalError()) return r1;
+					Result r2=value(i,r,vX);
+					if(r2.isFatalError()) return r2;
+					return new Result(Complex.mul(r1.val,r2.val));
 				}
 			}
 		}
@@ -299,29 +388,17 @@ public class Expression {
 		// Power (priority right->left)
 		for(int i=l;i<=r;i++)
 			if(br[i]==br[l]&&text.charAt(i)=='^'){
+				interpretResult[l].submit(r,SymbolCachePair.SYMBOL_POW,i);
 				Result r1=value(l,i-1,vX);
 				if(r1.isFatalError())return r1;
 				Result r2=value(i+1,r,vX);
 				if(r2.isFatalError())return r2;
-				Complex t1=r1.val;
-				Complex t2=r2.val;
-				if(t1.re==0&&t1.im==0){ // special treatment for 0
-					if(t2.re>0)return new Result(new Complex(0));
-					else if(t2.re<0&&t2.im==0)return new Result(Complex.Inf);
-					else return new Result(new Complex(Double.NaN,Double.NaN));
-				}
-				if(t1.norm().re<1&&t2.re==Double.POSITIVE_INFINITY){ // special treatment for inf
-					return new Result(new Complex(0));
-				}
-				if(t1.norm().re>1&&t2.re==Double.NEGATIVE_INFINITY){ // special treatment for -inf
-					return new Result(new Complex(0));
-				}
-
-				return new Result(Complex.exp(Complex.mul(t2,Complex.ln(t1))));
+				return new Result(Complex.pow(r1.val,r2.val));
 			}
 
 		// Sqrt symbol
 		if(text.charAt(l)=='√'){
+			interpretResult[l].submit(r,SymbolCachePair.SYMBOL_SQRT,-1);
 			Result r1=value(l+1,r,vX);
 			if(r1.isFatalError())return r1;
 			return new Result(Complex.sqrt(r1.val));
@@ -329,7 +406,18 @@ public class Expression {
 
 		// Brackets
 		if(text.charAt(r)!=')')return new Result(1).append("Evaluator",s+" can't be calculated",l,r);
-		if(text.charAt(l)=='(')return value(l+1,r-1,vX);
+		if(text.charAt(l)=='('){
+			interpretResult[l].submit(r,SymbolCachePair.SYMBOL_BRACKET,-1);
+			return value(l+1,r-1,vX);
+		}
+
+		// parse function
+		interpretResult[l].submit(r,SymbolCachePair.SYMBOL_FUNC,-1);
+		return funcValue(l,r,vX);
+	}
+
+	private Result funcValue(int l,int r,Complex vX){ // value() for function
+		String s=text.substring(l,r+1);
 
 		// Functions
 		int listPos; // the Position in Function class
@@ -341,6 +429,7 @@ public class Expression {
 		if(funcSer[l]<0){ // not searched in list yet
 			for(int i=0;i<Function.funcList.length;i++){
 				if(s.startsWith(Function.funcList[i].funcName+"(")){
+					//Log.i("expression","parse "+s);
 					funcSer[l]=i; // found
 					break;
 				}
@@ -350,7 +439,9 @@ public class Expression {
 		listPos=funcSer[l];
 
 		// Not found
-		if(listPos<0)return new Result(1).append("Evaluator",s+" can't be calculated",l,r);
+		if(listPos<0){
+			return new Result(1).append("Evaluator",s+" can't be calculated",l,r);
+		}
 
 		funcID=Function.funcList[listPos].funcSerial;
 		leftBr=l+Function.funcList[listPos].funcName.length();
@@ -430,13 +521,12 @@ public class Expression {
 				return new Result(new Complex(0)).append("Setting","Precision is set to "+Result.precision+" digits",l,r);
 			case Function.PREC+1:
 				int prec=(int)Math.round(val[0].re);
-				if(prec<0)return new Result(-1).setVal(new Complex(-1)).append("Setting","Precision too low",l,r);
 				if(prec>Result.maxPrecision)
-					return new Result(-1).setVal(new Complex(-1))
+					return new Result(-1)
 					.append("Setting","Precision too high",l,r)
 					.append("Setting","The maximum precision is "+Result.maxPrecision+" digits",l,r);
-				Result.precision=prec;
-				return new Result(new Complex(0)).append("Setting","Precision is set to "+prec+" digits",l,r);
+				Result.precision=prec<0?Result.maxPrecision:prec;
+				return new Result(new Complex(0)).append("Setting","Precision is set to "+Result.precision+" digits",l,r);
 			case Function.BASE:
 				Result.setBase(10);
 				return new Result(new Complex(0))
@@ -445,7 +535,7 @@ public class Expression {
 			case Function.BASE+1:
 				int base=(int)Math.round(val[0].re);
 				if(!(base>=2&&base<=10||base==12||base==16))
-					return new Result(-1).setVal(new Complex(-1)).append("Setting","Invalid base value",l,r);
+					return new Result(-1).append("Setting","Invalid base value",l,r);
 				Result.setBase(base);
 				return new Result(new Complex(0))
 				.append("Setting","Base is set to base-"+base+" ("+ParseNumber.baseName[base]+")",l,r)
@@ -454,20 +544,27 @@ public class Expression {
 		}
 
 		return new Result(1).append("Interpreter","Function "+Function.funcList[listPos].funcName+" syntax error",l,r);
-
 	}
 
 	public Result value(){ // Entrance !
-		// 0+NaNi id a sign for "No Variable X provided" initially
+
 
 		isWorking=true;
 		isExited=false;
-
+		isIntegOverTolerance=false;
+		isDiffOverTolerance=false;
 		if(brDiff!=0){
 			isExited=true;
 			return new Result(1).append("Interpreter","Brackets not paired",text.length()-1,text.length()-1);
 		}
+
+		// Start working
+		// 0+NaNi id a sign for "No Variable X provided" initially
+		initCache();
 		Result res=value(0,text.length()-1,new Complex(0,Double.NaN));
+		if(isWorking&&res.val.isValid()){
+			ansValue=res.val;
+		}
 		isExited=true;
 		return res;
 	}
@@ -483,7 +580,6 @@ public class Expression {
 		Complex dv=Complex.div(Complex.sub(rp.val,rn.val),new Complex(delta.re*2,delta.im*2));
 		return new Result(dv);
 	}
-
 	// 5 point diff()
 	Result diff5(int l,int r,Complex x0,Complex delta){
 		Result r1=diff3(l,r,x0,delta);
@@ -495,7 +591,6 @@ public class Expression {
 		Complex dv=Complex.div(new Complex(r1.val.re*4-r2.val.re,r1.val.im*4-r2.val.im),new Complex(3));
 		return new Result(dv);
 	}
-
 	// general diff()
 	private boolean isDiffOverTolerance=false; // only checked for once, reduce data traffic
 	Result diff(int l,int r,Complex x0){
@@ -525,7 +620,6 @@ public class Expression {
 		}
 		return res;
 	}
-
 	// directional diff
 	Result diff(int l,int r,Complex x0,Complex dir){
 		if(dir.re==0&&dir.im==0||!dir.isFinite())
@@ -554,16 +648,21 @@ public class Expression {
 		// 1 step Newton Method Iteration
 		Complex x2=Complex.sub(x1,r1);
 		Complex v2=value(l,r,x2).val;
-		Complex r2=Complex.div(v2,diff(l,r,x2).val);
+		if(r1.norm2()<1E-20&&v2.norm2()<1E-20){ // 1E-10 precision
+			return new Result(x2);
+		}
+
+		Complex r2=Complex.div(v2,diff(l,r,x2,r1).val); // use dir diff to speed up
 		if(r2.isNaN()){
 			return new Result(-1).append("Solver","Invalid initial value",l,r); // Error occurred
 		}
-		if(Complex.sub(x1,x2).norm2()<1E-20&&v2.norm2()<1E-20){ // 1E-10 precision
-			return new Result(x2);
-		}
-		Complex x3;
 
+		Complex x3;
 		Result root=new Result(0);
+		List<Complex> histRes=new ArrayList<>();
+		double minDe=1E200;
+		int minPos=-1;
+		int overErrorRangeCount=0;
 
 		for(int i=0;i<=iter;i++){ // normally no more than 20 iter., but for eq. such as x^.2, more is needed.
 
@@ -572,17 +671,47 @@ public class Expression {
 			Complex d1=Complex.mul(Complex.sub(x2,x1),r2);
 			Complex d2=Complex.sub(r2,r1);
 
-			x3=Complex.mul(Complex.sub(x2,Complex.div(d1,d2)),M); // Relaxation Param.
-			v2=value(l,r,x3).val;
 
-			if(Complex.sub(x2,x3).norm2()<1E-20){ // 1E-10 precision
+			x3=Complex.mul(Complex.sub(x2,Complex.div(d1,d2)),M); // Relaxation Param.
+			//Log.i("expression","Solve x3="+x3);
+
+			Complex deltaX=Complex.sub(x2,x3);
+			double deltaE=deltaX.norm2();
+			/*if(deltaX.norm2()<1E-20){ // 1E-10 precision
 				if(v2.norm2()<1E-20){
 					return new Result(x3);
 				}
+			}*/
+
+			histRes.add(x3);
+			if(i>0){
+
+				if(deltaE<minDe){
+					minDe=deltaE;
+					minPos=i;
+					overErrorRangeCount=0;
+				}
+				else{
+					overErrorRangeCount++;
+				}
+
+				if(!x3.isFinite()||overErrorRangeCount>20){
+					// return the result
+					Complex res=histRes.get(minPos);
+					if(minDe>1E-20||v2.norm2()>1E-18){
+						root.append("Solver","Function might be ill-conditioned at certain interval",l,r);
+					}
+					else{
+						root=new Result(res);
+					}
+					break;
+				}
+
 			}
 
+			v2=value(l,r,x3).val;
 			x1=x2;x2=x3;
-			r1=r2;r2=Complex.div(v2,diff(l,r,x3).val);
+			r1=r2;r2=Complex.div(v2,diff(l,r,x3).val); // use dir diff to speed up
 			if(r2.isNaN()){ // Math Error
 				if(M.re==1.0){ // 1.0 is a safely expressed double
 					root=new Result(-1)
@@ -593,9 +722,8 @@ public class Expression {
 			}
 		}
 
-		return root; // Not Found
+		return root;
 	}
-
 	// general solve
 	Result solve(int l,int r,Complex x0){ // auto solver
 		Result rp;
@@ -621,61 +749,98 @@ public class Expression {
 		return rp;
 	}
 
-	// simpson's integration from x0 to x2
-	Complex simpsonIntegrate(int l,int r,Complex x0,Complex x2){
-		Complex length=Complex.sub(x2,x0);
-		Complex x1=new Complex((x0.re+x2.re)/2,(x0.im+x2.im)/2);
-		Complex y0=value(l,r,x0).val;
-		Complex y1=value(l,r,x1).val;
-		Complex y2=value(l,r,x2).val;
-		Complex sum=new Complex((y0.re+4*y1.re+y2.re)/6,(y0.im+4*y1.im+y2.im)/6);
-		sum=Complex.mul(sum,length);
-
-		return sum;
-	}
-
 	// gauss's integration from x0 to x2
-	private static final double giIntv=Math.sqrt(0.6);
-	Complex gaussIntegrate3(int l,int r,Complex x0,Complex x2){
-		Complex length=Complex.sub(x2,x0);
-		Complex x1n=new Complex((x0.re+x2.re)/2,(x0.im+x2.im)/2);
-		Complex x0n=new Complex(x1n.re-giIntv*length.re/2,x1n.im-giIntv*length.im/2);
-		Complex x2n=new Complex(x1n.re+giIntv*length.re/2,x1n.im+giIntv*length.im/2);
-		Complex y0=value(l,r,x0n).val;
-		Complex y1=value(l,r,x1n).val;
-		Complex y2=value(l,r,x2n).val;
-		Complex sum=new Complex((5*y0.re+8*y1.re+5*y2.re)/18,(5*y0.im+8*y1.im+5*y2.im)/18);
-		sum=Complex.mul(sum,length);
+	// 7 nodes Gauss Quadrature
+	private static final double[] gaussNodes=new double[]{ // G7 Nodes
+	0.000000000000000000000000000000000e+00,
+	4.058451513773971669066064120769615e-01,
+	7.415311855993944398638647732807884e-01,
+	9.491079123427585245261896840478513e-01
+	};
 
-		return sum;
-	}
+	private static final double[] gaussWeights=new double[]{
+	4.179591836734693877551020408163265e-01,
+	3.818300505051189449503697754889751e-01,
+	2.797053914892766679014677714237796e-01,
+	1.294849661688696932706114326790820e-01
+	};
 
-	// gauss integration at 5 points
-	private static final double gi5Intv1=Math.sqrt(5-2*Math.sqrt(10./7.))/3;
-	private static final double gi5Intv2=Math.sqrt(5+2*Math.sqrt(10./7.))/3;
-	private static final double gi5K0=128./225.;
-	private static final double gi5K1=(322+13*Math.sqrt(70))/900;
-	private static final double gi5K2=(322-13*Math.sqrt(70))/900;
-	Complex gaussIntegrate(int l,int r,Complex x0,Complex x2){
+	// 15 nodes Gauss Quadrature
+	private static final double[] gaussNodes15=new double[]{ // G15 Nodes
+	0.000000000000000000000000000000000e+00,
+	2.011940939974345223006283033945962e-01,
+	3.941513470775633698972073709810455e-01,
+	5.709721726085388475372267372539106e-01,
+	7.244177313601700474161860546139380e-01,
+	8.482065834104272162006483207742169e-01,
+	9.372733924007059043077589477102095e-01,
+	9.879925180204854284895657185866126e-01
+	};
+
+	private static final double[] gaussWeights15=new double[]{
+	2.025782419255612728806201999675193e-01,
+	1.984314853271115764561183264438393e-01,
+	1.861610000155622110268005618664228e-01,
+	1.662692058169939335532008604812088e-01,
+	1.395706779261543144478047945110283e-01,
+	1.071592204671719350118695466858693e-01,
+	7.036604748810812470926741645066734e-02,
+	3.075324199611726835462839357720442e-02
+	};
+
+	Complex gaussIntegrate7(int l,int r,Complex x0,Complex x2){ // G7
 		Complex lenH=new Complex(x2.re-x0.re,x2.im-x0.im);
 		Complex halfH=new Complex(lenH.re/2,lenH.im/2);
 
-		Complex t1=new Complex((x0.re+x2.re)/2,(x0.im+x2.im)/2);
-		Complex t2=new Complex(t1.re+gi5Intv1*halfH.re,t1.im+gi5Intv1*halfH.im);
-		Complex t3=new Complex(t1.re+gi5Intv2*halfH.re,t1.im+gi5Intv2*halfH.im);
-		Complex t4=new Complex(t1.re-gi5Intv1*halfH.re,t1.im-gi5Intv1*halfH.im);
-		Complex t5=new Complex(t1.re-gi5Intv2*halfH.re,t1.im-gi5Intv2*halfH.im);
+		Complex t0=new Complex((x0.re+x2.re)/2,(x0.im+x2.im)/2);
+		Complex t1p=new Complex(t0.re+gaussNodes[1]*halfH.re,t0.im+gaussNodes[1]*halfH.im);
+		Complex t2p=new Complex(t0.re+gaussNodes[2]*halfH.re,t0.im+gaussNodes[2]*halfH.im);
+		Complex t3p=new Complex(t0.re+gaussNodes[3]*halfH.re,t0.im+gaussNodes[3]*halfH.im);
+		Complex t1n=new Complex(t0.re-gaussNodes[1]*halfH.re,t0.im-gaussNodes[1]*halfH.im);
+		Complex t2n=new Complex(t0.re-gaussNodes[2]*halfH.re,t0.im-gaussNodes[2]*halfH.im);
+		Complex t3n=new Complex(t0.re-gaussNodes[3]*halfH.re,t0.im-gaussNodes[3]*halfH.im);
 
-		Complex y1=value(l,r,t1).val;
-		Complex y2=value(l,r,t2).val;
-		Complex y3=value(l,r,t3).val;
-		Complex y4=value(l,r,t4).val;
-		Complex y5=value(l,r,t5).val;
+		Complex y0=value(l,r,t0).val;
+		Complex y1p=value(l,r,t1p).val;
+		Complex y2p=value(l,r,t2p).val;
+		Complex y3p=value(l,r,t3p).val;
+		Complex y1n=value(l,r,t1n).val;
+		Complex y2n=value(l,r,t2n).val;
+		Complex y3n=value(l,r,t3n).val;
 
 		Complex sum=new Complex(
-		y1.re*gi5K0+(y2.re+y4.re)*gi5K1+(y3.re+y5.re)*gi5K2,
-		y1.im*gi5K0+(y2.im+y4.im)*gi5K1+(y3.im+y5.im)*gi5K2
+		y0.re*gaussWeights[0]+(y1p.re+y1n.re)*gaussWeights[1]+(y2p.re+y2n.re)*gaussWeights[2]+(y3p.re+y3n.re)*gaussWeights[3],
+		y0.im*gaussWeights[0]+(y1p.im+y1n.im)*gaussWeights[1]+(y2p.im+y2n.im)*gaussWeights[2]+(y3p.im+y3n.im)*gaussWeights[3]
 		);
+		sum=Complex.mul(sum,halfH);
+
+		return sum;
+	}
+
+	Complex gaussIntegrate15(int l,int r,Complex x0,Complex x2){ // G15
+		Complex lenH=new Complex(x2.re-x0.re,x2.im-x0.im);
+		Complex halfH=new Complex(lenH.re/2,lenH.im/2);
+
+		Complex t0=new Complex((x0.re+x2.re)/2,(x0.im+x2.im)/2);
+		Complex[] tp=new Complex[7];
+		Complex[] tn=new Complex[7];
+
+		for(int i=0;i<7;i++){
+			tp[i]=new Complex(t0.re+gaussNodes15[i+1]*halfH.re,t0.im+gaussNodes15[i+1]*halfH.im);
+			tn[i]=new Complex(t0.re-gaussNodes15[i+1]*halfH.re,t0.im-gaussNodes15[i+1]*halfH.im);
+		}
+
+		t0=value(l,r,t0).val;
+		Complex sum=new Complex(t0.re*gaussWeights15[0],t0.im*gaussWeights15[0]);
+		for(int i=0;i<7;i++){
+			tp[i]=value(l,r,tp[i]).val;
+			tn[i]=value(l,r,tn[i]).val;
+			sum=Complex.add(sum,new Complex(
+				(tp[i].re+tn[i].re)*gaussWeights15[i+1],
+				(tp[i].im+tn[i].im)*gaussWeights15[i+1]
+			));
+		}
+
 		sum=Complex.mul(sum,halfH);
 
 		return sum;
@@ -683,7 +848,11 @@ public class Expression {
 
 	// integrate from x0 to x2, auto step-length
 	private boolean isIntegOverTolerance=false; // only checked for once, reduce data traffic
+	//private static final double logInfIntegrateStepRatio=2;
+	private static final double infIntegrateStepRatio=Math.E*Math.E;
 	Result adaptiveIntegrate(int l,int r,Complex x0,Complex x2,Complex lastSum,double TOL,int depth){
+
+		//Log.i("Quadrature","Integ "+x0+" to "+x2);
 
 		if(!isWorking)return new Result(3); // Calculation Thread Halted
 
@@ -696,8 +865,10 @@ public class Expression {
 		if(Double.isInfinite(x2.re)){
 			double aRe=Math.abs(x0.re);
 			double newRe;
-			if(aRe<=5000) // Avoid precision lost due to large number
-				newRe=(aRe<1?Math.exp(aRe):Math.E*aRe);
+			if(aRe<=1E5){ // Avoid precision loss due to large number
+				double logNextPoint=aRe*2;
+				newRe=(logNextPoint<1?Math.exp(logNextPoint):infIntegrateStepRatio*aRe);
+			}
 			else
 				return new Result(-1).setVal(new Complex(0));
 
@@ -716,20 +887,22 @@ public class Expression {
 		Complex sAB,sAC,sCB,sABnew,abbr;
 
 		sAB=lastSum;
-		sAC=gaussIntegrate(l,r,x0,x1);
-		sCB=gaussIntegrate(l,r,x1,x2);
+		sAC=gaussIntegrate15(l,r,x0,x1);
+		sCB=gaussIntegrate15(l,r,x1,x2);
 		sABnew=new Complex(0);
 		if(sAC.isFinite())sABnew=Complex.add(sABnew,sAC);
 		if(sCB.isFinite())sABnew=Complex.add(sABnew,sCB);
 		abbr=Complex.sub(sAB,sABnew);
 
-		if(abbr.isValid()&&abbr.norm2()<200*TOL){
+		//Log.i("Quadrature","Integ err="+abbr.norm().re);
+
+		if(abbr.isValid()&&abbr.norm2()<200*TOL){ // Under precision limit
 			return new Result(sABnew);
 		}
 
-		if(depth>=18){
+		if(depth>=20){ // Max iteration
 			Result r1=new Result(sABnew);
-			if(!isIntegOverTolerance&&abbr.norm2()>2E6*TOL){
+			if(!isIntegOverTolerance&&abbr.norm().re>1E3*TOL){
 				isIntegOverTolerance=true;
 				r1.append("Quadrature","Function might be ill-conditioned at certain interval",l,r);
 			}
@@ -740,12 +913,19 @@ public class Expression {
 		sAC=adaptiveIntegrate(l,r,x0,x1,sAC,TOL/4,depth+1).val;
 		sCB=adaptiveIntegrate(l,r,x1,x2,sCB,TOL/4,depth+1).val;
 		sABnew=Complex.add(sAC,sCB);
+
+
 		return new Result(sABnew);
 	}
-
 	// general quadrature
 	Result integrate(int l,int r,Complex x0,Complex x2){
-		Result check=value(l,r,x0);
+		if(x0.isNaN()){
+			return new Result(-1).append("Quadrature","Invalid lower bound",l,r);
+		}
+		if(x2.isNaN()){
+			return new Result(-1).append("Quadrature","Invalid upper bound",l,r);
+		}
+		Result check=value(l,r,x0); // Check for syntax error. Better solution ?
 		if(check.isFatalError())return check;
 
 		if(Double.isInfinite(x0.re)){
@@ -763,7 +943,7 @@ public class Expression {
 
 		double TOL=1E-8; // the precision expected, 8 digits
 
-		Complex sAB=gaussIntegrate(l,r,x0,x2);
+		Complex sAB=gaussIntegrate15(l,r,x0,x2);
 		return adaptiveIntegrate(l,r,x0,x2,sAB,TOL*TOL,0);
 	}
 
@@ -771,13 +951,15 @@ public class Expression {
 	Result sum(int l,int r,Complex start,Complex end){
 		double ds=start.re;
 		double de=end.re;
+		boolean isInfiniteSummation=(Double.isInfinite(ds)||Double.isInfinite(de));
+
 		if(de<ds){
 			return new Result(2).append("Summation","Upper bound is smaller than lower bound",l,r);
 		}
 
 		Complex sum=new Complex(0);
 		Complex v=new Complex(0);
-		final double TOL2=1E-14; // 7 digits expected
+		final double TOL2=1E-16; // 8 digits expected
 		final int maxBoundCnt=1000;
 		final int maxCnt=100000;
 		int boundCnt=0;
@@ -800,15 +982,18 @@ public class Expression {
 				.append("Summation","Error occurred during summation at x="+v.toString(),l,r)
 				.append("Summation","The sum might not be finite",l,r);
 			}
-			if(res.val.norm2()<TOL2){
-				boundCnt++;
+
+			if(isInfiniteSummation){
+				if(res.val.norm2()<TOL2){
+					boundCnt++;
+				}else{
+					boundCnt=0;
+				}
+				if(boundCnt>maxBoundCnt){
+					break;
+				}
 			}
-			else{
-				boundCnt=0;
-			}
-			if(boundCnt>maxBoundCnt){
-				break;
-			}
+
 			if(cnt==maxCnt){
 				new Result(-1).append("Summation","Time consumption is longer than expected",l,r);
 			}
@@ -873,19 +1058,9 @@ public class Expression {
 
 		for(;;){ // adapted from iteration
 			if(n.re>1&&m.re>1){
-				if(n.re-m.re>=1){
-					ans=Complex.mul(new Complex(n.re),ans);
-					n.re-=1;
-				}
-				else if(m.re-n.re>=1){
-					ans=Complex.div(ans,new Complex(m.re));
-					m.re-=1;
-				}
-				else{
-					ans=Complex.mul(new Complex(n.re/m.re),ans);
-					n.re-=1;
-					m.re-=1;
-				}
+				ans=Complex.mul(new Complex(n.re/m.re),ans);
+				n.re-=1;
+				m.re-=1;
 			}
 			else{
 				Complex af=Complex.div(perm(n,m),Complex.gamma(new Complex(m.re+1,m.im)));
@@ -906,49 +1081,55 @@ public class Expression {
 		return combIter(n,r);
 	}
 
-	// limit (Lagrange interpolation)
+	// limit (Lagrange interpolation at x0/inf)
 	private static final Complex par2p=new Complex((1+Math.sqrt(2))/4);
 	private static final Complex par2n=new Complex((1-Math.sqrt(2))/4);
 	private static final Complex hRatio=new Complex(1+Math.sqrt(2));
 	private Result limitH(int l,int r,Complex x0,Complex h){
 
 		Complex f0;
+		boolean finiteLimit=x0.isFinite();
 
-		if(x0.isFinite()){
+		Complex x1,x2,x3,x4;
 
-			Complex x1=Complex.add(x0,h);
-			Complex x2=Complex.add(x0,Complex.mul(h,hRatio));
-			Complex x3=Complex.sub(x0,h);
-			Complex x4=Complex.sub(x0,Complex.mul(h,hRatio));
+		if(finiteLimit){
+			x1=Complex.add(x0,h);
+			x2=Complex.add(x0,Complex.mul(h,hRatio));
+			x3=Complex.sub(x0,h);
+			x4=Complex.sub(x0,Complex.mul(h,hRatio));
+		}
+		else{
+			double norm2=h.norm2();
+			x1=new Complex(h.re/norm2,h.im/norm2);
+			x2=new Complex(x1.re*2,x1.im*2);
+			x3=new Complex(x1.re*3,x1.im*3);
+			x4=new Complex(x1.re*4,x1.im*4);
+		}
 
-			Result r1=value(l,r,x1);
-			Result r2=value(l,r,x2);
-			Result r3=value(l,r,x3);
-			Result r4=value(l,r,x4);
+		Result r1=value(l,r,x1);if(r1.isFatalError())return r1;
+		Result r2=value(l,r,x2);if(r2.isFatalError())return r2;
+		Result r3=value(l,r,x3);if(r3.isFatalError())return r3;
+		Result r4=value(l,r,x4);if(r4.isFatalError())return r4;
 
-			if(r1.isFatalError())return r1;
-			if(r2.isFatalError())return r2;
-			if(r3.isFatalError())return r3;
-			if(r4.isFatalError())return r4;
+		Complex f1=r1.val;
+		Complex f2=r2.val;
+		Complex f3=r3.val;
+		Complex f4=r4.val;
 
-			Complex f1=r1.val;
-			Complex f2=r2.val;
-			Complex f3=r3.val;
-			Complex f4=r4.val;
-
+		if(finiteLimit){
 			Complex f13=Complex.mul(Complex.add(f1,f3),par2p);
 			Complex f24=Complex.mul(Complex.add(f2,f4),par2n);
 			f0=Complex.add(f13,f24);
 		}
 		else{
-			double norm2=h.norm2();
-			Complex N=new Complex(h.re/norm2,h.im/norm2);
-			return value(l,r,N);
+			f0=new Complex(
+			(-f1.re+24*f2.re-81*f3.re+64*f4.re)/6,
+			(-f1.im+24*f2.im-81*f3.im+64*f4.im)/6
+			);
 		}
 
 		return new Result(f0);
 	}
-
 	// general limit
 	public Result limit(int l,int r,Complex x0){
 
@@ -1073,11 +1254,14 @@ public class Expression {
 			histRes.add(res);
 		}
 
+		if(minPos<1){
+			return new Result(-1).append("Evaluator","Function may be not convergent at given point",l,r);
+		}
 		Complex minRes=histRes.get(minPos-1);
 		//Log.i("Limit","err="+minDe);
 
 		if(minDe>1E-5){ // didn't found ?
-			return new Result(minRes).append("Evaluator","Function may be not convergent at given point",l,r);
+			return new Result(-1).append("Evaluator","Function may be not convergent at given point",l,r);
 		}else{ // found
 			return new Result(minRes);
 		}

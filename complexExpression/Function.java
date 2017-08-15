@@ -1,5 +1,3 @@
-package complexExpression;
-
 /**
  * Created by Iraka Crow on 2017/3/25.
  */
@@ -90,6 +88,6 @@ class Function{
 	new Serial("perm",PERM),
 	new Serial("comb",COMB),
 	new Serial("prec",PREC),
-	new Serial("base",BASE),
+	new Serial("base",BASE)
 	};
 }

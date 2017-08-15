@@ -9,6 +9,7 @@ The content of each class is as follows:<br/>
 * Result.java: Contains a complex result and error codes
 * Function.java: Function names and serials used in Expression.java is registrated in this class
 * ParseNumber.java: Number parser for different radixes
+* TestMain.java: A sample to test this package
 
 Files are encoded in UTF8. Class Complex, Result & ParseNumber must be used together. Class Expression & Function may separate.<br/>
 
@@ -27,3 +28,4 @@ sqrt(4+i)/arctan(-2i-1.1)^i
 ```
 
 An Android app using this kernel (Calci_X.X.X.apk) is provided.<br/>
+The present package is used in Calci 1.3.3.<br/>
