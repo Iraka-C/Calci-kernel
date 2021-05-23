@@ -28,4 +28,5 @@ sqrt(4+i)/arctan(-2i-1.1)^i
 ```
 
 An Android app using this kernel (Calci_X.X.X.apk) is provided.<br/>
+You can also download this app from [CoolAPK](https://coolapk.com/apk/com.iraka.calci).<br/>
 The present package is used in Calci 1.3.3.<br/>
